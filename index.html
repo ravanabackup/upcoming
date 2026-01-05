@@ -366,7 +366,7 @@
                     const container = document.getElementById(target);
                     if (!container) continue;
                     
-                    const limit = key === 'now-playing' ? 20 : 12;
+                    const limit = key === 'now-playing' ? 20 : 20;
                     for (const m of data.results.slice(0, limit)) {
                         container.appendChild(await createCard(m));
                     }
