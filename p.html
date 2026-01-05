@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Movie Poster Formatter</title>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+  <style>
+    :root {
+      /* Material You Dark Theme Palette (Tonal Palettes) */
+      --md-sys-color-surface: #1C1B1F;
+      --md-sys-color-on-surface: #E6E1E5;
+      --md-sys-color-surface-container: #2B2930;
+      --md-sys-color-primary: #D0BCFF;
+      --md-sys-color-on-primary: #381E72;
+      --md-sys-color-secondary-container: #4A4458;
+      --md-sys-color-on-secondary-container: #E8DEF8;
+      --md-sys-color-outline: #938F99;
+      --md-sys-color-error: #F2B8B5;
+    }
+
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--md-sys-color-surface);
+      color: var(--md-sys-color-on-surface);
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 { font-weight: 400; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+
+    .main-container {
+      max-width: 600px;
+      width: 100%;
+      background: var(--md-sys-color-surface-container);
+      padding: 24px;
+      border-radius: 28px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    /* Dropzone Styling */
+    .dropzone {
+      border: 2px dashed var(--md-sys-color-outline);
+      padding: 40px 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: rgba(255,255,255,0.02);
+    }
+    .dropzone:hover, .dropzone.dragover {
+      background: var(--md-sys-color-secondary-container);
+      border-color: var(--md-sys-color-primary);
+    }
+
+    /* Input Controls */
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    input[type="text"] {
+      flex: 1;
+      background: transparent;
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: white;
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--md-sys-color-primary); border-width: 2px; }
+
+    /* Buttons */
+    button {
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
+      border: none;
+      padding: 12px 24px;
+      border-radius: 100px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary {
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
+    }
+
+    /* Output Area */
+    #status { margin: 16px 0; font-size: 0.85em; color: var(--md-sys-color-outline); text-align: center; }
+    canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 12px;
+      margin: 20px auto;
+      background: #000;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+
+  <h1><span class="material-symbols-outlined">movie_filter</span> Poster Formatter</h1>
+
+  <div class="main-container">
+    <div class="dropzone" id="dropzone">
+      <span class="material-symbols-outlined" style="font-size: 48px; margin-bottom: 8px;">upload_file</span>
+      <p>Drop poster here or click to browse</p>
+      <input type="file" id="fileInput" accept="image/*" style="display:none">
+    </div>
+
+    <div class="input-group">
+      <input type="text" id="urlInput" placeholder="Paste image URL...">
+      <button id="fetchBtn">Import</button>
+    </div>
+
+    <div style="text-align: center;">
+        <button id="pasteBtn" class="secondary">
+            <span class="material-symbols-outlined">content_paste</span> Paste Image
+        </button>
+    </div>
+
+    <div id="status">Ready.</div>
+
+    <canvas id="canvas" width="500" height="750" draggable="true"></canvas>
+
+    <div class="actions">
+      <button id="copyBtn">
+        <span class="material-symbols-outlined">content_copy</span> Copy
+      </button>
+      <button id="downloadBtn" class="secondary">
+        <span class="material-symbols-outlined">download</span> Download
+      </button>
+    </div>
+  </div>
+
+<script>
+const MIN_W=500, MIN_H=750, MAX_W=2000, MAX_H=3000, TARGET_RATIO=2/3;
+const canvas=document.getElementById('canvas'), ctx=canvas.getContext('2d');
+const dropzone=document.getElementById('dropzone'), fileInput=document.getElementById('fileInput');
+const urlInput=document.getElementById('urlInput'), fetchBtn=document.getElementById('fetchBtn');
+const status=document.getElementById('status'), copyBtn=document.getElementById('copyBtn'), downloadBtn=document.getElementById('downloadBtn');
+const pasteBtn = document.getElementById('pasteBtn');
+
+function setStatus(msg, isError = false){ 
+    status.textContent=msg;
+    status.style.color = isError ? "var(--md-sys-color-error)" : "var(--md-sys-color-outline)";
+}
+
+/** * Robust Paste Logic
+ * Listens for system-level paste and also provides a button
+ */
+async function handlePaste(e) {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+        if (item.type.indexOf("image") !== -1) {
+            const blob = item.getAsFile();
+            const dataUrl = await readFile(blob);
+            process(dataUrl);
+            return;
+        }
+    }
+    // If no image, check for URL in text
+    const text = (e.clipboardData || e.originalEvent.clipboardData).getData('text');
+    if (text && text.startsWith('http')) process(text.trim());
+}
+
+window.addEventListener('paste', handlePaste);
+
+pasteBtn.addEventListener('click', async () => {
+    try {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+            for (const type of item.types) {
+                if (type.startsWith('image/')) {
+                    const blob = await item.getType(type);
+                    const dataUrl = await readFile(blob);
+                    process(dataUrl);
+                    return;
+                }
+            }
+        }
+        setStatus("No image found in clipboard.", true);
+    } catch (err) {
+        setStatus("Paste failed. Try Ctrl+V directly.", true);
+    }
+});
+
+function readFile(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result); r.onerror=()=>rej();
+    r.readAsDataURL(file);
+  });
+}
+
+function loadImage(src){
+  return new Promise((res,rej)=>{
+    const img=new Image(); 
+    img.crossOrigin="anonymous"; // Crucial for URL imports to avoid tainted canvas
+    img.onload=()=>res(img); 
+    img.onerror=()=>rej(new Error("Failed to load image. If it's a URL, the site may block direct access."));
+    img.src=src;
+  });
+}
+
+function cropToRatio(w,h){
+  const srcRatio=w/h;
+  if(srcRatio> TARGET_RATIO){
+    const sw=Math.round(h*TARGET_RATIO), sx=Math.round((w-sw)/2);
+    return {sx,sy:0,sw,sh:h};
+  } else {
+    const sh=Math.round(w/TARGET_RATIO), sy=Math.round((h-sh)/2);
+    return {sx:0,sy,sw:w,sh};
+  }
+}
+
+function pickScale(sw,sh){
+  const minS=Math.max(MIN_W/sw, MIN_H/sh);
+  const maxS=Math.min(MAX_W/sw, MAX_H/sh);
+  let s=1; if(s<minS) s=minS; if(s>maxS) s=maxS;
+  return s;
+}
+
+async function process(src){
+  try {
+    setStatus("Processing...");
+    const img = await loadImage(src);
+    const crop = cropToRatio(img.naturalWidth, img.naturalHeight);
+    const s = pickScale(crop.sw, crop.sh);
+    
+    let outW = Math.round(crop.sw * s);
+    outW = Math.min(MAX_W, Math.max(MIN_W, outW));
+    let outH = Math.round(outW * 1.5);
+    
+    if(outH > MAX_H){ 
+        outH = MAX_H; 
+        outW = Math.round(outH * (2/3)); 
+    }
+
+    canvas.width = outW; 
+    canvas.height = outH;
+    ctx.imageSmoothingEnabled = true; 
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, outW, outH);
+    
+    setStatus(`Ready: ${outW}x${outH}`);
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+// UI Event Listeners
+dropzone.addEventListener('click',()=>fileInput.click());
+dropzone.addEventListener('dragover',e=>{e.preventDefault(); dropzone.classList.add('dragover');});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop',async e=>{
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  const f=e.dataTransfer.files[0];
+  if(f){ const d=await readFile(f); process(d); }
+  else {
+    const url=e.dataTransfer.getData("text/uri-list")||e.dataTransfer.getData("text/plain");
+    if(url) process(url.trim());
+  }
+});
+
+fileInput.addEventListener('change',async()=>{
+  if(fileInput.files[0]){ const d=await readFile(fileInput.files[0]); process(d); }
+});
+
+fetchBtn.addEventListener('click',()=>{ if(urlInput.value.trim()) process(urlInput.value.trim()); });
+
+// Enhanced Copy to Clipboard
+copyBtn.addEventListener('click', async () => {
+    try {
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.95));
+        
+        if (!window.ClipboardItem) {
+            throw new Error("Your browser doesn't support direct image copy.");
+        }
+
+        const data = [new ClipboardItem({ [blob.type]: blob })];
+        await navigator.clipboard.write(data);
+        setStatus("Copied to clipboard! ✓");
+    } catch (err) {
+        console.error(err);
+        setStatus("Copy failed. Try Downloading instead.", true);
+    }
+});
+
+downloadBtn.addEventListener('click',()=>{
+  canvas.toBlob(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); 
+    a.download=`poster-${Date.now()}.jpg`; 
+    a.click();
+  },'image/jpeg',0.92);
+});
+</script>
+</body>
+</html>
