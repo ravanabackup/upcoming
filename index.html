@@ -157,7 +157,7 @@
             
             try {
                 const searchQuery = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_');
-                const res = await fetch(`https://v2.sg.media-imdb.com/suggestion/${searchQuery.charAt(0)}/${searchQuery}.json`);
+                const res = await fetch(`https://cors.kawiesh.top/https://v2.sg.media-imdb.com/suggestion/${searchQuery.charAt(0)}/${searchQuery}.json`);
                 const data = await res.json();
                 
                 if (!data.d || data.d.length === 0) {
@@ -171,7 +171,7 @@
                     const year = item.y ? item.y : '';
                     const starring = item.s ? item.s : '';
                     const imdbId = item.id ? item.id : '';
-                    const imdbLink = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '#';
+                    const imdbLink = imdbId ? `https://cors.kawiesh.top/https://www.imdb.com/title/${imdbId}/` : '#';
                     
                     html += `
                         <div class="imdb-card" onclick="window.open('${imdbLink}', '_blank')">
