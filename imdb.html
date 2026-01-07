@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IMDb Future Releases</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #121212; color: #e0e0e0; }
+        .controls { 
+            background: #1e1e1e; padding: 20px; border-radius: 10px; 
+            position: sticky; top: 10px; z-index: 100; border: 1px solid #f5c518;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #1e1e1e; }
+        th, td { padding: 12px; border: 1px solid #333; text-align: left; vertical-align: middle; }
+        th { background: #f5c518; color: #000; position: sticky; top: 125px; }
+        .btn { background: #f5c518; border: none; padding: 10px 25px; font-weight: bold; cursor: pointer; border-radius: 5px; color: #000; }
+        .btn:hover { background: #e6b800; }
+        .footer-load { text-align: center; padding: 40px; }
+        .poster { width: 60px; height: 90px; object-fit: cover; border-radius: 4px; background: #333; border: 1px solid #444; }
+        a { color: #f5c518; text-decoration: none; font-weight: bold; font-size: 1.1em; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h2 style="margin:0 0 10px 0; color:#f5c518;">Upcoming & Future Releases</h2>
+        <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+            <strong>Sort:</strong>
+            <label><input type="radio" name="sort" value="asc" checked> Oldest / From Today (ASC)</label>
+            <label><input type="radio" name="sort" value="desc"> Newest (DESC)</label>
+            <button id="resetBtn" class="btn">Refresh List</button>
+            <span id="countDisplay" style="background: #333; padding: 5px 12px; border-radius: 20px;">Loaded: 0</span>
+        </div>
+        <div id="log" style="color:#aaa; font-size: 0.85em; margin-top:10px;">Ready.</div>
+    </div>
+
+    <table id="movieTable">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Poster</th>
+                <th>Title</th>
+                <th>Release Date</th>
+                <th>Rating</th>
+            </tr>
+        </thead>
+        <tbody id="movieBody"></tbody>
+    </table>
+
+    <div class="footer-load">
+        <button id="loadMoreBtn" class="btn" style="display:none;">Load Next 50 Results</button>
+        <div id="loadingMoreText" style="display:none;">🎬 Scanning IMDb database...</div>
+    </div>
+
+    <script>
+        const proxy = "https://cors.kawiesh.top/";
+        const today = new Date().toISOString().split('T')[0];
+        let nextCursor = "";
+        let totalCount = 0;
+
+        document.getElementById('resetBtn').onclick = () => initFetch();
+        document.getElementById('loadMoreBtn').onclick = () => fetchBatch();
+
+        async function initFetch() {
+            document.getElementById('movieBody').innerHTML = "";
+            totalCount = 0;
+            nextCursor = "";
+            document.getElementById('countDisplay').innerText = 'Loaded: 0';
+            document.getElementById('log').innerText = 'Loading...';
+            await fetchBatch();
+        }
+
+        async function fetchBatch() {
+            document.getElementById('loadMoreBtn').style.display = "none";
+            document.getElementById('loadingMoreText').style.display = "block";
+
+            try {
+                const sortOrder = document.querySelector('input[name="sort"]:checked').value;
+                const url = `https://www.imdb.com/search/title/?title_type=feature,tv_movie,tv_special,video&release_date=${today},&interests=in0000240&sort=release_date,${sortOrder}${nextCursor ? `&cursor=${nextCursor}` : ""}`;
+                
+                const response = await fetch(proxy + url);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, "text/html");
+                const scriptTag = doc.querySelector('#__NEXT_DATA__');
+                
+                if (!scriptTag) {
+                    throw new Error('Could not find data on page');
+                }
+                
+                const jsonData = JSON.parse(scriptTag.innerHTML);
+                const results = jsonData.props.pageProps.searchResults.titleResults;
+
+                if (!results || !results.titleListItems) {
+                    throw new Error('No results found');
+                }
+
+                results.titleListItems.forEach(item => {
+                    totalCount++;
+                    
+                    // Extract IMDb ID from multiple possible locations
+                    let imdbId = null;
+                    if (item.titleId) {
+                        imdbId = item.titleId;
+                    } else if (item.id) {
+                        imdbId = item.id;
+                    } else if (item.node && item.node.id) {
+                        imdbId = item.node.id;
+                    } else if (item.tconst) {
+                        imdbId = item.tconst;
+                    }
+                    
+                    // Skip if no valid ID found
+                    if (!imdbId) {
+                        console.warn("No IMDb ID found for item:", item);
+                        totalCount--; // Don't count items without IDs
+                        return;
+                    }
+                    
+                    // Extract title
+                    let title = "Unknown Title";
+                    if (item.originalTitleText) {
+                        title = item.originalTitleText;
+                    } else if (item.titleText && item.titleText.text) {
+                        title = item.titleText.text;
+                    }
+                    
+                    // Extract year
+                    let year = "TBA";
+                    if (item.releaseYear) {
+                        if (typeof item.releaseYear === 'object' && item.releaseYear.year) {
+                            year = item.releaseYear.year;
+                        } else {
+                            year = item.releaseYear;
+                        }
+                    }
+                    
+                    // Extract rating
+                    let rating = "N/A";
+                    if (item.ratingsSummary && item.ratingsSummary.aggregateRating) {
+                        rating = item.ratingsSummary.aggregateRating;
+                    } else if (item.rating) {
+                        rating = item.rating;
+                    }
+                    
+                    // Extract poster
+                    const poster = (item.primaryImage && item.primaryImage.url) 
+                        ? item.primaryImage.url 
+                        : "https://m.media-amazon.com/images/S/sash/4FyxwxECzL-U1J8.png";
+
+                    const row = `<tr>
+                        <td style="color:#777;">${totalCount}</td>
+                        <td><img src="${poster}" class="poster" onerror="this.src='https://via.placeholder.com/60x90?text=No+Poster'"></td>
+                        <td><a href="https://www.imdb.com/title/${imdbId}/" target="_blank">${title}</a></td>
+                        <td>${year}</td>
+                        <td>⭐ ${rating}</td>
+                    </tr>`;
+                    document.getElementById('movieBody').insertAdjacentHTML('beforeend', row);
+                });
+
+                nextCursor = results.endCursor || "";
+                document.getElementById('loadMoreBtn').style.display = nextCursor ? "inline-block" : "none";
+                document.getElementById('countDisplay').innerText = `Loaded: ${totalCount}`;
+                document.getElementById('log').innerText = `Successfully loaded ${totalCount} items.`;
+                
+                if (!nextCursor) {
+                    document.getElementById('log').innerText += " (All results loaded)";
+                }
+            } catch (err) {
+                console.error("Error:", err);
+                document.getElementById('log').innerText = "Error fetching data: " + err.message + ". Try refreshing.";
+            } finally {
+                document.getElementById('loadingMoreText').style.display = "none";
+            }
+        }
+
+        // Start loading on page load
+        initFetch();
+    </script>
+</body>
+</html>
